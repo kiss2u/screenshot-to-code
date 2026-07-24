@@ -48,5 +48,9 @@ class ProviderSession(Protocol):
     ) -> None:
         ...
 
+    def total_cost_usd(self) -> Optional[float]:
+        """USD spent so far this session; None when the model is unpriced."""
+        ...
+
     async def close(self) -> None:
         ...

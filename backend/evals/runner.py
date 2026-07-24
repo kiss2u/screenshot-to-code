@@ -7,6 +7,7 @@ import inspect
 from llm import Llm
 from config import LOCAL_ASSET_BASE_URL
 from prompts.prompt_types import Stack
+from agent.engine import BudgetExceededError
 from .core import generate_code_for_image
 from .sets import get_set_inputs_dir
 from .utils import image_to_data_url
@@ -132,6 +133,21 @@ async def generate_code_and_time(
                 content,
                 duration,
                 None,
+                retries_used,
+            )
+        except BudgetExceededError as e:
+            # Never retry budget aborts: each retry would spend the whole
+            # ceiling again.
+            print(
+                f"Budget exceeded for {original_input_filename} "
+                f"(attempt {attempt_idx}); not retrying."
+            )
+            return (
+                original_input_filename,
+                attempt_idx,
+                None,
+                None,
+                e,
                 retries_used,
             )
         except Exception as e:

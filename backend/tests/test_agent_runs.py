@@ -434,9 +434,13 @@ async def test_asset_snapshot_catches_urls_in_js_strings(
 class _ToolThenDoneSession:
     """One create_file tool turn, then a final assistant turn."""
 
-    def __init__(self) -> None:
+    def __init__(self, cost_usd: Optional[float] = None) -> None:
         self.turns = 0
         self.closed = False
+        self.cost_usd = cost_usd
+
+    def total_cost_usd(self) -> Optional[float]:
+        return self.cost_usd
 
     async def stream_turn(self, on_event: Any) -> Any:
         from agent.providers.base import ProviderTurn, StreamEvent
@@ -536,6 +540,91 @@ async def test_engine_records_full_run(
     assert (Path(recorder.run_dir) / "final.html").read_text() == (
         "<html>from tool</html>"
     )
+
+
+@pytest.mark.asyncio
+async def test_engine_aborts_over_budget_run(
+    logs_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent.engine import BudgetExceededError
+
+    session = _ToolThenDoneSession(cost_usd=5.0)
+    monkeypatch.setattr(
+        "agent.engine.create_provider_session", lambda **kwargs: session
+    )
+
+    recorder = _make_recorder()
+    engine = _make_engine(recorder)
+    with pytest.raises(BudgetExceededError) as excinfo:
+        await engine.run(Llm.GPT_5_5_HIGH, [])
+
+    # User-facing message must not leak cost figures.
+    assert "$" not in str(excinfo.value)
+    events = _read_events(recorder)
+    assert events[-1]["status"] == "failed"
+    # Only the first turn ran; its tools were never executed.
+    assert session.turns == 1
+
+
+@pytest.mark.asyncio
+async def test_engine_allows_final_turn_over_budget(
+    logs_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A run finishing naturally is returned even when over budget: aborting
+    # after the final turn would waste tokens already paid for.
+    session = _ToolThenDoneSession(cost_usd=0.5)
+    monkeypatch.setattr(
+        "agent.engine.create_provider_session", lambda **kwargs: session
+    )
+    recorder = _make_recorder()
+    engine = _make_engine(recorder)
+
+    async def creep_cost(*args: Any, **kwargs: Any) -> Any:
+        # Cost crosses the ceiling only on the final (no-tool) turn.
+        result = await _ToolThenDoneSession.stream_turn(session, *args, **kwargs)
+        if session.turns == 2:
+            session.cost_usd = 5.0
+        return result
+
+    monkeypatch.setattr(session, "stream_turn", creep_cost)
+    result = await engine.run(Llm.GPT_5_5_HIGH, [])
+    assert result == "<html>from tool</html>"
+
+
+@pytest.mark.asyncio
+async def test_eval_runner_does_not_retry_budget_abort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent.engine import BudgetExceededError
+    from evals.runner import generate_code_and_time
+
+    calls = {"count": 0}
+
+    async def always_over_budget(**kwargs: Any) -> str:
+        calls["count"] += 1
+        raise BudgetExceededError()
+
+    monkeypatch.setattr(
+        "evals.runner.generate_code_for_image", always_over_budget
+    )
+    (
+        filename,
+        attempt,
+        content,
+        duration,
+        error,
+        retries_used,
+    ) = await generate_code_and_time(
+        image_url="data:image/png;base64,eA==",
+        stack="html_tailwind",
+        model=Llm.GPT_5_5_HIGH,
+        original_input_filename="x.png",
+        attempt_idx=0,
+    )
+    assert isinstance(error, BudgetExceededError)
+    assert content is None
+    assert retries_used == 0
+    assert calls["count"] == 1  # no retries
 
 
 @pytest.mark.asyncio

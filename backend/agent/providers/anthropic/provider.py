@@ -397,6 +397,12 @@ class AnthropicProviderSession(ProviderSession):
             assistant_turn=final_message,
         )
 
+    def total_cost_usd(self) -> Optional[float]:
+        pricing = MODEL_PRICING.get(_get_anthropic_api_model_name(self._model))
+        if pricing is None:
+            return None
+        return self._total_usage.cost(pricing)
+
     def _image_block(self, part: Any) -> Dict[str, Any] | None:
         """A public URL goes as a url source; local bytes go as base64."""
         if part.image_url:

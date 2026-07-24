@@ -477,6 +477,12 @@ class OpenAIProviderSession(ProviderSession):
             )
         return turn
 
+    def total_cost_usd(self) -> float | None:
+        pricing = MODEL_PRICING.get(get_openai_api_name(self._model))
+        if pricing is None:
+            return None
+        return self._total_usage.cost(pricing)
+
     @staticmethod
     def _image_ref(part: Any) -> str | None:
         """A public URL is sent as-is; local bytes become a base64 data URL."""

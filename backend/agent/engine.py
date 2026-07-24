@@ -18,7 +18,21 @@ from agent.tools import (
     summarize_text,
     summarize_tool_input,
 )
+from config import GENERATION_MAX_COST_USD
 from fs_logging.agent_runs import AgentRunRecorder
+
+
+class BudgetExceededError(Exception):
+    """Raised when a single generation exceeds the spend ceiling.
+
+    The message is shown verbatim to end users (variantError), so it must
+    not contain cost figures; the exact spend is in the run record.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Generation stopped: this variant exceeded its resource limit."
+        )
 
 
 class AgentEngine:
@@ -236,6 +250,17 @@ class AgentEngine:
 
             if not turn.tool_calls:
                 return await self._finalize_response(turn.assistant_text)
+
+            # Abort only when the run would otherwise continue: a run that
+            # just produced its final answer is already paid for. Unpriced
+            # models return None and are not bounded.
+            spent = session.total_cost_usd()
+            if spent is not None and spent > GENERATION_MAX_COST_USD:
+                print(
+                    f"[BUDGET] Aborting variant {self.variant_index}: "
+                    f"${spent:.2f} > ${GENERATION_MAX_COST_USD:.2f}"
+                )
+                raise BudgetExceededError()
 
             executed_tool_calls: List[ExecutedToolCall] = []
             for tool_call in turn.tool_calls:

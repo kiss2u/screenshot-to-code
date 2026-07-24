@@ -360,6 +360,12 @@ class GeminiProviderSession(ProviderSession):
             assistant_turn=assistant_turn,
         )
 
+    def total_cost_usd(self) -> Optional[float]:
+        pricing = MODEL_PRICING.get(_get_gemini_api_model_name(self._model))
+        if pricing is None:
+            return None
+        return self._total_usage.cost(pricing)
+
     @staticmethod
     async def _resolve_part_bytes(part: Any) -> tuple[bytes | None, str]:
         """Gemini only accepts inline bytes, so download public URLs."""
