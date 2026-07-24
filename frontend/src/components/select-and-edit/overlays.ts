@@ -60,8 +60,11 @@ function ensureOverlay(doc: Document, kind: OverlayKind): HTMLElement {
     height: "0",
     pointerEvents: "none",
     borderRadius: "4px",
-    transition:
-      "top 90ms ease-out, left 90ms ease-out, width 90ms ease-out, height 90ms ease-out",
+    // Geometry must snap to the element under the pointer. Explicitly
+    // disabling both properties also protects the overlay from broad styles
+    // in generated pages such as `* { transition: all 200ms }`.
+    transition: "none",
+    animation: "none",
     display: "none",
     ...OVERLAY_STYLES[kind],
   });

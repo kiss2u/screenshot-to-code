@@ -74,6 +74,16 @@ function PreviewComponent({
     if (!inSelectAndEditModeRef.current) return;
     const target = event.target as HTMLElement;
     if (!target || !target.getBoundingClientRect) return;
+
+    // The locked target owns this space. Avoid stacking the lighter hover
+    // treatment over it, which can obscure the stronger selection ring/label.
+    const selected = useAppStore.getState().selectedElement;
+    if (selected && (target === selected || selected.contains(target))) {
+      hoveredElementRef.current = null;
+      hideHoverOverlay(target.ownerDocument);
+      return;
+    }
+
     hoveredElementRef.current = target;
     showHoverOverlay(target);
   }, []);
@@ -129,6 +139,10 @@ function PreviewComponent({
     const targetElement = clickEvent.target as HTMLElement;
     if (!targetElement) return;
 
+    // Replace the transient hover treatment with the visually stronger locked
+    // target immediately; hovering other elements remains available afterward.
+    hoveredElementRef.current = null;
+    hideHoverOverlay(targetElement.ownerDocument);
     setSelectedElement(targetElement);
   }, [clickEvent, setSelectedElement]);
 
