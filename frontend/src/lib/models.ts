@@ -6,6 +6,7 @@ export enum CodeGenerationModel {
   CLAUDE_OPUS_4_8_HIGH = "claude-opus-4-8 (high effort)",
   CLAUDE_OPUS_4_8_XHIGH = "claude-opus-4-8 (xhigh effort)",
   CLAUDE_OPUS_4_8_MAX = "claude-opus-4-8 (max effort)",
+  CLAUDE_FABLE_5_MAX = "claude-fable-5 (max effort)",
   CLAUDE_SONNET_4_6 = "claude-sonnet-4-6",
   GPT_5_5_NONE = "gpt-5.5 (no thinking)",
   GPT_5_5_LOW = "gpt-5.5 (low thinking)",
@@ -121,6 +122,9 @@ export const CODE_GENERATION_MODEL_DESCRIPTIONS: {
   },
   "claude-opus-4-8 (max effort)": {
     name: "Claude Opus 4.8 (max)",
+  },
+  "claude-fable-5 (max effort)": {
+    name: "Claude Fable 5 (max)",
   },
   "claude-sonnet-4-6": { name: "Claude Sonnet 4.6" },
   "gemini-3.5-flash (high thinking)": {
