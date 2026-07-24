@@ -22,6 +22,7 @@ Recording must never break generation: every public method no-ops when
 disabled and swallows its own exceptions.
 """
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -64,6 +65,13 @@ _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif", 
 _ALWAYS_SNAPSHOT_HOSTS = ("replicate.delivery",)
 
 _ASSET_DOWNLOAD_TIMEOUT_SECONDS = 15.0
+
+# Replicate delivery URLs expire within ~an hour; when run logging is on,
+# tool outputs on these hosts are downloaded into the run folder as they are
+# produced — even ones the model later discards from the final HTML.
+_EXPIRING_ASSET_URL_RE = re.compile(
+    r"https?://[^\s\"'\\]*replicate\.delivery/[^\s\"'\\]+"
+)
 
 
 def get_agent_runs_directory() -> str:
@@ -289,6 +297,9 @@ class AgentRunRecorder:
         self._num_tool_calls = 0
         self._llm_call_summaries: list[dict[str, Any]] = []
         self._tool_call_summaries: list[dict[str, Any]] = []
+        self._tool_asset_urls: set[str] = set()
+        self._tool_asset_tasks: list["asyncio.Task[None]"] = []
+        self._tool_asset_manifest: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------ paths
 
@@ -627,8 +638,78 @@ class AgentRunRecorder:
                     "multimodal_parts": multimodal_meta,
                 },
             )
+            self._schedule_tool_asset_downloads(tool_event_id, result)
         except Exception as exc:
             print(f"[AGENT RUN] Failed to record tool end: {exc}")
+
+    def _schedule_tool_asset_downloads(
+        self, tool_event_id: str, result: "ToolExecutionResult"
+    ) -> None:
+        """Kick off background downloads of expiring tool-output URLs.
+
+        Fire-and-forget so generation latency is unaffected; the tasks are
+        gathered in ``record_run_end`` before the manifest is written. Only
+        runs when recording is enabled, so without prompt logging nothing is
+        ever fetched or stored.
+        """
+        try:
+            blob = json.dumps(to_serializable(result.result), ensure_ascii=False)
+            urls = [
+                url
+                for url in dict.fromkeys(_EXPIRING_ASSET_URL_RE.findall(blob))
+                if url not in self._tool_asset_urls
+            ]
+            if not urls:
+                return
+            loop = asyncio.get_running_loop()
+            for index, url in enumerate(urls):
+                self._tool_asset_urls.add(url)
+                entry: dict[str, Any] = {
+                    "url": url,
+                    "tool_event_id": tool_event_id,
+                    "status": "pending",
+                }
+                self._tool_asset_manifest.append(entry)
+                self._tool_asset_tasks.append(
+                    loop.create_task(
+                        self._download_tool_asset(url, tool_event_id, index, entry)
+                    )
+                )
+        except RuntimeError:
+            # No running event loop (sync callers/tests): skip quietly.
+            return
+        except Exception as exc:
+            print(f"[AGENT RUN] Failed to schedule tool asset downloads: {exc}")
+
+    async def _download_tool_asset(
+        self, url: str, tool_event_id: str, index: int, entry: dict[str, Any]
+    ) -> None:
+        try:
+            import httpx
+
+            tool_assets_dir = os.path.join(self.run_dir, "tool_assets")
+            os.makedirs(tool_assets_dir, exist_ok=True)
+            async with httpx.AsyncClient(
+                timeout=_ASSET_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                content = response.content
+            safe_event = re.sub(r"[^A-Za-z0-9_-]", "_", tool_event_id)[:60]
+            ext = _guess_extension(url, response.headers.get("content-type"))
+            filename = f"{safe_event}_{index}{ext}"
+            with open(os.path.join(tool_assets_dir, filename), "wb") as f:
+                f.write(content)
+            entry.update(
+                {
+                    "file": f"tool_assets/{filename}",
+                    "bytes": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest()[:12],
+                    "status": "saved",
+                }
+            )
+        except Exception as exc:
+            entry.update({"status": "failed", "error": str(exc)})
 
     def record_set_code(self, content_len: int, source: str) -> None:
         if not self.enabled:
@@ -656,6 +737,10 @@ class AgentRunRecorder:
             total_cost_usd = (
                 self._priced_cost_usd if self._num_priced_calls > 0 else None
             )
+            if self._tool_asset_tasks:
+                await asyncio.gather(
+                    *self._tool_asset_tasks, return_exceptions=True
+                )
             if final_html:
                 await self._snapshot_output(final_html)
             self._append_event(
@@ -705,6 +790,7 @@ class AgentRunRecorder:
                 "has_unpriced_calls": self._has_unpriced_calls,
                 "llm_calls": self._llm_call_summaries,
                 "tool_calls": self._tool_call_summaries,
+                "tool_assets": self._tool_asset_manifest,
                 "final_html": final_html,
             }
             os.makedirs(self.run_dir, exist_ok=True)
@@ -825,6 +911,12 @@ class AgentRunRecorder:
             if path_ext in _IMAGE_EXTENSIONS or any(
                 host.endswith(h) for h in _ALWAYS_SNAPSHOT_HOSTS
             ):
+                remote_urls.append(url)
+        # Expiring-host URLs can also appear outside markup attributes —
+        # e.g. as JS string literals (`image.src = '...'`) — so sweep the
+        # whole document for them regardless of context.
+        for url in _EXPIRING_ASSET_URL_RE.findall(final_html):
+            if url not in remote_urls:
                 remote_urls.append(url)
 
         if remote_urls:

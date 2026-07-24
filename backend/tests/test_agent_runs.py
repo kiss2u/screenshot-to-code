@@ -386,6 +386,51 @@ async def test_asset_snapshot_downloads_remote_images(
     assert "https://example.com/broken.png" in rewritten
 
 
+@pytest.mark.asyncio
+async def test_asset_snapshot_catches_urls_in_js_strings(
+    logs_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeResponse:
+        content = b"js-loaded-image"
+        headers = {"content-type": "image/jpeg"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+        async def get(self, url: str) -> FakeResponse:
+            return FakeResponse()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+
+    # Image loaded programmatically — no src= attribute anywhere.
+    html = (
+        "<html><script>loadPhoto(el, "
+        "'https://replicate.delivery/abc/output_1.jpeg');</script></html>"
+    )
+    recorder = _make_recorder()
+    recorder.record_run_start(Llm.GPT_5_5_HIGH, [])
+    await recorder.record_run_end("completed", final_html=html)
+
+    run_dir = Path(recorder.run_dir)
+    manifest = json.loads((run_dir / "assets_manifest.json").read_text())
+    assert manifest[0]["status"] == "downloaded"
+    rewritten = (run_dir / "final_selfcontained.html").read_text()
+    assert "replicate.delivery" not in rewritten
+    assert "assets/" in rewritten
+
+
 class _ToolThenDoneSession:
     """One create_file tool turn, then a final assistant turn."""
 
@@ -665,6 +710,105 @@ async def test_prompt_reports_prune_skips_agent_runs(logs_path: Path) -> None:
     assert result.deleted_count == 0
     assert Path(recorder.run_dir).exists()
     assert Path(get_agent_runs_db_path()).exists()
+
+
+@pytest.mark.asyncio
+async def test_tool_replicate_outputs_saved_when_logging(
+    logs_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeResponse:
+        content = b"replicate-image-bytes"
+        headers = {"content-type": "image/png"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+        async def get(self, url: str) -> FakeResponse:
+            if "broken" in url:
+                raise RuntimeError("download failed")
+            return FakeResponse()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+
+    recorder = _make_recorder()
+    recorder.record_run_start(Llm.GPT_5_5_HIGH, [])
+    tool_call = ToolCall(id="call_img", name="generate_images", arguments={})
+    recorder.record_tool_start("call_img", tool_call)
+    recorder.record_tool_end(
+        "call_img",
+        tool_call,
+        ToolExecutionResult(
+            ok=True,
+            result={
+                "images": {
+                    "a prompt": "https://replicate.delivery/xyz/one.png",
+                    "another": "https://replicate.delivery/broken/two.png",
+                }
+            },
+            summary={},
+        ),
+    )
+    await recorder.record_run_end("completed")
+
+    run_dir = Path(recorder.run_dir)
+    saved = list((run_dir / "tool_assets").glob("*.png"))
+    assert len(saved) == 1
+    assert saved[0].read_bytes() == b"replicate-image-bytes"
+
+    run_json = json.loads((run_dir / "run.json").read_text())
+    statuses = {e["url"]: e["status"] for e in run_json["tool_assets"]}
+    assert statuses["https://replicate.delivery/xyz/one.png"] == "saved"
+    assert statuses["https://replicate.delivery/broken/two.png"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_tool_asset_downloads_disabled_without_logging(
+    logs_path: Path,
+) -> None:
+    recorder = _make_recorder(enabled=False)
+    recorder.record_run_start(Llm.GPT_5_5_HIGH, [])
+    tool_call = ToolCall(id="call_img", name="generate_images", arguments={})
+    recorder.record_tool_end(
+        "call_img",
+        tool_call,
+        ToolExecutionResult(
+            ok=True,
+            result={"images": {"p": "https://replicate.delivery/xyz/one.png"}},
+            summary={},
+        ),
+    )
+    await recorder.record_run_end("completed")
+    assert not (logs_path / "run_logs").exists()
+
+
+def test_tool_asset_scheduling_without_event_loop_is_safe(
+    logs_path: Path,
+) -> None:
+    # Sync context (no running loop): scheduling must skip, not raise.
+    recorder = _make_recorder()
+    recorder.record_run_start(Llm.GPT_5_5_HIGH, [])
+    tool_call = ToolCall(id="call_img", name="generate_images", arguments={})
+    recorder.record_tool_end(
+        "call_img",
+        tool_call,
+        ToolExecutionResult(
+            ok=True,
+            result={"images": {"p": "https://replicate.delivery/xyz/one.png"}},
+            summary={},
+        ),
+    )
 
 
 def test_recorder_survives_internal_errors(logs_path: Path) -> None:
