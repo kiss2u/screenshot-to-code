@@ -35,6 +35,10 @@ export enum CodeGenerationModel {
   GEMINI_3_5_FLASH_MEDIUM = "gemini-3.5-flash (medium thinking)",
   GEMINI_3_5_FLASH_LOW = "gemini-3.5-flash (low thinking)",
   GEMINI_3_5_FLASH_MINIMAL = "gemini-3.5-flash (minimal thinking)",
+  GEMINI_3_6_FLASH_HIGH = "gemini-3.6-flash (high thinking)",
+  GEMINI_3_6_FLASH_MEDIUM = "gemini-3.6-flash (medium thinking)",
+  GEMINI_3_6_FLASH_LOW = "gemini-3.6-flash (low thinking)",
+  GEMINI_3_6_FLASH_MINIMAL = "gemini-3.6-flash (minimal thinking)",
 }
 
 export type VariantLabelTone = "fast" | "max";
@@ -158,6 +162,18 @@ export const CODE_GENERATION_MODEL_DESCRIPTIONS: {
   },
   "gemini-3.5-flash (minimal thinking)": {
     name: "Gemini 3.5 Flash (minimal)",
+  },
+  "gemini-3.6-flash (high thinking)": {
+    name: "Gemini 3.6 Flash (high)",
+  },
+  "gemini-3.6-flash (medium thinking)": {
+    name: "Gemini 3.6 Flash (medium)",
+  },
+  "gemini-3.6-flash (low thinking)": {
+    name: "Gemini 3.6 Flash (low)",
+  },
+  "gemini-3.6-flash (minimal thinking)": {
+    name: "Gemini 3.6 Flash (minimal)",
   },
   "gemini-3-flash-preview (high thinking)": {
     name: "Gemini 3 Flash (high)",

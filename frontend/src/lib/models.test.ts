@@ -1,9 +1,27 @@
-import { CodeGenerationModel, getVariantLabel } from "./models";
+import {
+  CODE_GENERATION_MODEL_DESCRIPTIONS,
+  CodeGenerationModel,
+  getVariantLabel,
+} from "./models";
 
 const FLASH_MIN = CodeGenerationModel.GEMINI_3_FLASH_PREVIEW_MINIMAL;
 const PRO_HIGH = CodeGenerationModel.GEMINI_3_1_PRO_PREVIEW_HIGH;
 const GPT_HIGH = CodeGenerationModel.GPT_5_5_HIGH;
 const PRO_LOW = CodeGenerationModel.GEMINI_3_1_PRO_PREVIEW_LOW;
+
+describe("Gemini 3.6 Flash", () => {
+  test.each([
+    [CodeGenerationModel.GEMINI_3_6_FLASH_MINIMAL, "minimal"],
+    [CodeGenerationModel.GEMINI_3_6_FLASH_LOW, "low"],
+    [CodeGenerationModel.GEMINI_3_6_FLASH_MEDIUM, "medium"],
+    [CodeGenerationModel.GEMINI_3_6_FLASH_HIGH, "high"],
+  ])("exposes the %s variant", (model, level) => {
+    expect(model).toBe(`gemini-3.6-flash (${level} thinking)`);
+    expect(CODE_GENERATION_MODEL_DESCRIPTIONS[model].name).toBe(
+      `Gemini 3.6 Flash (${level})`
+    );
+  });
+});
 
 describe("getVariantLabel", () => {
   test("image/create: Flash-minimal -> Fast; Pro-high & GPT-5.5 high -> Max", () => {

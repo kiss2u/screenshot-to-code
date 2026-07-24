@@ -50,6 +50,10 @@ class Llm(Enum):
     GEMINI_3_5_FLASH_MEDIUM = "gemini-3.5-flash (medium thinking)"
     GEMINI_3_5_FLASH_LOW = "gemini-3.5-flash (low thinking)"
     GEMINI_3_5_FLASH_MINIMAL = "gemini-3.5-flash (minimal thinking)"
+    GEMINI_3_6_FLASH_HIGH = "gemini-3.6-flash (high thinking)"
+    GEMINI_3_6_FLASH_MEDIUM = "gemini-3.6-flash (medium thinking)"
+    GEMINI_3_6_FLASH_LOW = "gemini-3.6-flash (low thinking)"
+    GEMINI_3_6_FLASH_MINIMAL = "gemini-3.6-flash (minimal thinking)"
 
 
 class Completion(TypedDict):
@@ -107,6 +111,10 @@ MODEL_PROVIDER: dict[Llm, str] = {
     Llm.GEMINI_3_5_FLASH_MEDIUM: "gemini",
     Llm.GEMINI_3_5_FLASH_LOW: "gemini",
     Llm.GEMINI_3_5_FLASH_MINIMAL: "gemini",
+    Llm.GEMINI_3_6_FLASH_HIGH: "gemini",
+    Llm.GEMINI_3_6_FLASH_MEDIUM: "gemini",
+    Llm.GEMINI_3_6_FLASH_LOW: "gemini",
+    Llm.GEMINI_3_6_FLASH_MINIMAL: "gemini",
 }
 
 # Convenience sets for membership checks
