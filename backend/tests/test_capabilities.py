@@ -1,7 +1,7 @@
 import pytest
 
 import preview_screenshot
-from routes.home import get_capabilities
+from routes.capabilities import get_capabilities
 
 
 @pytest.mark.asyncio
@@ -12,7 +12,7 @@ async def test_capabilities_reports_screenshot_preview_available(
         return True
 
     monkeypatch.setattr(preview_screenshot, "probe_screenshot_preview", fake_probe)
-    monkeypatch.setattr("routes.home.probe_screenshot_preview", fake_probe)
+    monkeypatch.setattr("routes.capabilities.probe_screenshot_preview", fake_probe)
 
     result = await get_capabilities()
     assert result.screenshot_preview is True
@@ -25,7 +25,7 @@ async def test_capabilities_reports_screenshot_preview_unavailable(
     async def fake_probe() -> bool:
         return False
 
-    monkeypatch.setattr("routes.home.probe_screenshot_preview", fake_probe)
+    monkeypatch.setattr("routes.capabilities.probe_screenshot_preview", fake_probe)
 
     result = await get_capabilities()
     assert result.screenshot_preview is False
