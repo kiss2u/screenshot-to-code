@@ -49,7 +49,7 @@ the best results and lets you compare multiple models per generation.
 | Key | Required? | What it unlocks |
 |-----|-----------|-----------------|
 | `OPENAI_API_KEY` | One of these three | GPT code-gen variants (GPT-5.5, GPT-5.4 Mini) |
-| `ANTHROPIC_API_KEY` | One of these three | Claude code-gen variants (Opus 4.8, Fable 5, Sonnet 4.6) |
+| `ANTHROPIC_API_KEY` | One of these three | Claude code-gen variants (Opus 5, Opus 4.8, Fable 5, Sonnet 4.6) |
 | `GEMINI_API_KEY` | One of these three — **strongly recommended** | Gemini code-gen variants (3 Flash, 3.1 Pro); extracts real assets from the screenshot; required for video mode |
 | `REPLICATE_API_KEY` | **Strongly recommended** | Image editing, background removal, and Replicate-backed image generation — without it, `edit_image` and `remove_background` are unavailable, and image generation falls back to OpenAI if configured |
 

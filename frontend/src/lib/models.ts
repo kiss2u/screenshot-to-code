@@ -1,6 +1,11 @@
 // Keep in sync with backend (llm.py)
 // Order here matches dropdown order
 export enum CodeGenerationModel {
+  CLAUDE_OPUS_5_LOW = "claude-opus-5 (low effort)",
+  CLAUDE_OPUS_5_MEDIUM = "claude-opus-5 (medium effort)",
+  CLAUDE_OPUS_5_HIGH = "claude-opus-5 (high effort)",
+  CLAUDE_OPUS_5_XHIGH = "claude-opus-5 (xhigh effort)",
+  CLAUDE_OPUS_5_MAX = "claude-opus-5 (max effort)",
   CLAUDE_OPUS_4_8_LOW = "claude-opus-4-8 (low effort)",
   CLAUDE_OPUS_4_8_MEDIUM = "claude-opus-4-8 (medium effort)",
   CLAUDE_OPUS_4_8_HIGH = "claude-opus-4-8 (high effort)",
@@ -30,6 +35,10 @@ export enum CodeGenerationModel {
   GEMINI_3_5_FLASH_MEDIUM = "gemini-3.5-flash (medium thinking)",
   GEMINI_3_5_FLASH_LOW = "gemini-3.5-flash (low thinking)",
   GEMINI_3_5_FLASH_MINIMAL = "gemini-3.5-flash (minimal thinking)",
+  GEMINI_3_6_FLASH_HIGH = "gemini-3.6-flash (high thinking)",
+  GEMINI_3_6_FLASH_MEDIUM = "gemini-3.6-flash (medium thinking)",
+  GEMINI_3_6_FLASH_LOW = "gemini-3.6-flash (low thinking)",
+  GEMINI_3_6_FLASH_MINIMAL = "gemini-3.6-flash (minimal thinking)",
 }
 
 export type VariantLabelTone = "fast" | "max";
@@ -108,6 +117,21 @@ export const CODE_GENERATION_MODEL_DESCRIPTIONS: {
   "gpt-5.4-mini (low thinking)": {
     name: "GPT 5.4 Mini (low)",
   },
+  "claude-opus-5 (low effort)": {
+    name: "Claude Opus 5 (low)",
+  },
+  "claude-opus-5 (medium effort)": {
+    name: "Claude Opus 5 (medium)",
+  },
+  "claude-opus-5 (high effort)": {
+    name: "Claude Opus 5 (high)",
+  },
+  "claude-opus-5 (xhigh effort)": {
+    name: "Claude Opus 5 (xhigh)",
+  },
+  "claude-opus-5 (max effort)": {
+    name: "Claude Opus 5 (max)",
+  },
   "claude-opus-4-8 (low effort)": {
     name: "Claude Opus 4.8 (low)",
   },
@@ -138,6 +162,18 @@ export const CODE_GENERATION_MODEL_DESCRIPTIONS: {
   },
   "gemini-3.5-flash (minimal thinking)": {
     name: "Gemini 3.5 Flash (minimal)",
+  },
+  "gemini-3.6-flash (high thinking)": {
+    name: "Gemini 3.6 Flash (high)",
+  },
+  "gemini-3.6-flash (medium thinking)": {
+    name: "Gemini 3.6 Flash (medium)",
+  },
+  "gemini-3.6-flash (low thinking)": {
+    name: "Gemini 3.6 Flash (low)",
+  },
+  "gemini-3.6-flash (minimal thinking)": {
+    name: "Gemini 3.6 Flash (minimal)",
   },
   "gemini-3-flash-preview (high thinking)": {
     name: "Gemini 3 Flash (high)",

@@ -229,6 +229,7 @@ def test_canonical_tool_definitions_include_edit_image() -> None:
     tool_names = [tool.name for tool in tools]
     assert "edit_image" in tool_names
     edit_image_tool = next(tool for tool in tools if tool.name == "edit_image")
+    assert "upscale" in edit_image_tool.description.lower()
     assert edit_image_tool.parameters["required"] == ["prompt", "image_urls"]
     properties = edit_image_tool.parameters["properties"]
     assert properties["image_urls"]["type"] == "array"

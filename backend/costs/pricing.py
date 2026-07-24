@@ -37,6 +37,9 @@ MODEL_PRICING: Dict[str, ModelPricing] = {
     "claude-sonnet-4-6": ModelPricing(
         input=3.00, output=15.00, cache_read=0.30, cache_write=3.75
     ),
+    "claude-opus-5": ModelPricing(
+        input=5.00, output=25.00, cache_read=0.50, cache_write=6.25
+    ),
     "claude-opus-4-8": ModelPricing(
         input=5.00, output=25.00, cache_read=0.50, cache_write=6.25
     ),
@@ -59,5 +62,8 @@ MODEL_PRICING: Dict[str, ModelPricing] = {
     ),
     "gemini-3.5-flash": ModelPricing(
         input=1.50, output=9.00, cache_read=0.15
+    ),
+    "gemini-3.6-flash": ModelPricing(
+        input=1.50, output=7.50, cache_read=0.15
     ),
 }

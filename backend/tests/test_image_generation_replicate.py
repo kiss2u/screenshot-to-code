@@ -133,6 +133,7 @@ async def test_edit_image_uses_pruna_model_and_normalizes_output(
     )
 
     assert result == "https://example.com/edited.png"
+    assert replicate.P_IMAGE_EDIT_MODEL_PATH == "prunaai/p-image-edit"
     assert captured["model_path"] == replicate.P_IMAGE_EDIT_MODEL_PATH
     assert captured["input"] == {
         "prompt": "Make image 1 monochrome",

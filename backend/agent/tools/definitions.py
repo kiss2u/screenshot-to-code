@@ -224,9 +224,9 @@ def canonical_tool_definitions(
             CanonicalToolDefinition(
                 name="edit_image",
                 description=(
-                    "Edit one or more images using a text prompt. Provide the main "
-                    "image first, followed by optional reference images. Returns a URL "
-                    "to the edited image."
+                    "Edit or upscale one or more images using a text prompt. Provide the "
+                    "main image first, followed by optional reference images. Returns a "
+                    "URL to the edited image."
                 ),
                 parameters=_edit_image_schema(),
             )
