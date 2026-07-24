@@ -130,6 +130,39 @@ class TestCreatePrompt:
         assert "## Design system" in text
         assert "Reuse .mockup-frame" in text
 
+    @pytest.mark.asyncio
+    async def test_image_mode_create_requires_edit_image_for_upscaling(self) -> None:
+        messages = await build_prompt_messages(
+            stack=self.TEST_STACK,
+            input_mode="image",
+            generation_type="create",
+            prompt={"text": "", "images": [self.TEST_IMAGE_URL], "videos": []},
+            history=[],
+        )
+
+        system_text = messages[0].get("content")
+        assert isinstance(system_text, str)
+        user_content = messages[1].get("content")
+        assert isinstance(user_content, list)
+        text_part = next(
+            part
+            for part in user_content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+        user_text = text_part.get("text")
+        assert isinstance(user_text, str)
+
+        upscale_instruction = (
+            "If an extracted or supplied asset is visibly low-resolution or pixelated "
+            "and must render larger, upscale it with edit_image—not CSS stretching or "
+            "generate_images."
+        )
+        removed_instruction = 'Pass its source first, set aspect_ratio: "match_input_image"'
+        assert upscale_instruction in system_text
+        assert upscale_instruction in user_text
+        assert removed_instruction not in system_text
+        assert removed_instruction not in user_text
+
     def test_plan_update_with_history_uses_history_strategy(self) -> None:
         plan = derive_prompt_construction_plan(
             stack=self.TEST_STACK,
