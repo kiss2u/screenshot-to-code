@@ -471,6 +471,15 @@ function EvalSessionsPage() {
                                 <span className="max-w-[160px] truncate font-mono text-[11px] text-zinc-300">
                                   {row.filename}
                                 </span>
+                                <a
+                                  href={`${HTTP_BACKEND_URL}${row.image_url}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Open image in new tab"
+                                  className="shrink-0 rounded p-1 text-zinc-600 hover:bg-zinc-700 hover:text-zinc-200"
+                                >
+                                  <BsBoxArrowUpRight className="text-[11px]" />
+                                </a>
                               </div>
                             </td>
                             {matrix.models.map((model) => {
