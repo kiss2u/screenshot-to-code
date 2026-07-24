@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import { BsBoxArrowUpRight } from "react-icons/bs";
+import { BsBoxArrowUpRight, BsGripVertical } from "react-icons/bs";
 
 import { HTTP_BACKEND_URL } from "../../config";
 import EvalNavigation from "./EvalNavigation";
@@ -51,6 +51,7 @@ interface SessionMatrix {
   set_missing: boolean;
   rows: MatrixRow[];
   models: string[];
+  model_notes: Record<string, string>;
   cells: MatrixCell[];
   unmatched_run_count: number;
 }
@@ -161,6 +162,12 @@ function EvalSessionsPage() {
   const [newSessionSet, setNewSessionSet] = useState("");
   const [newSessionName, setNewSessionName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [editingNotesModel, setEditingNotesModel] = useState<string | null>(
+    null
+  );
+  const [notesDraft, setNotesDraft] = useState("");
+  const [dragModel, setDragModel] = useState<string | null>(null);
+  const [dragOverModel, setDragOverModel] = useState<string | null>(null);
 
   const cellsByKey = useMemo(() => {
     const map = new Map<string, MatrixCell>();
@@ -308,6 +315,66 @@ function EvalSessionsPage() {
     navigate(`/evals/agent-runs?run=${encodeURIComponent(runId)}`);
   };
 
+  const saveOrder = async (reordered: string[]) => {
+    if (!matrix || !selectedSessionId) return;
+    setMatrix({ ...matrix, models: reordered });
+    try {
+      await fetch(
+        `${HTTP_BACKEND_URL}/eval-sessions/${encodeURIComponent(
+          selectedSessionId
+        )}/model-order`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ models: reordered }),
+        }
+      );
+    } catch (error) {
+      console.error("Error saving model order", error);
+      toast.error("Failed to save column order.");
+    }
+  };
+
+  const handleColumnDrop = (target: string) => {
+    if (!matrix || !dragModel || dragModel === target) return;
+    const dragIndex = matrix.models.indexOf(dragModel);
+    const targetIndex = matrix.models.indexOf(target);
+    if (dragIndex < 0 || targetIndex < 0) return;
+    const reordered = matrix.models.filter((m) => m !== dragModel);
+    // Dragging rightwards drops after the target, leftwards before it.
+    const insertAt =
+      dragIndex < targetIndex
+        ? reordered.indexOf(target) + 1
+        : reordered.indexOf(target);
+    reordered.splice(insertAt, 0, dragModel);
+    void saveOrder(reordered);
+  };
+
+  const saveNotes = async (model: string) => {
+    if (!matrix || !selectedSessionId) return;
+    const notes = notesDraft.trim();
+    setEditingNotesModel(null);
+    setMatrix({
+      ...matrix,
+      model_notes: { ...matrix.model_notes, [model]: notes },
+    });
+    try {
+      await fetch(
+        `${HTTP_BACKEND_URL}/eval-sessions/${encodeURIComponent(
+          selectedSessionId
+        )}/model-notes`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model, notes }),
+        }
+      );
+    } catch (error) {
+      console.error("Error saving model notes", error);
+      toast.error("Failed to save notes.");
+    }
+  };
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-950 text-white">
       <div className="shrink-0">
@@ -449,10 +516,82 @@ function EvalSessionsPage() {
                           {matrix.models.map((model) => (
                             <th
                               key={model}
-                              className="min-w-[140px] px-2 py-1 text-left font-mono text-[11px] font-normal text-zinc-400"
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                if (dragModel && dragModel !== model) {
+                                  setDragOverModel(model);
+                                }
+                              }}
+                              onDragLeave={() =>
+                                setDragOverModel((current) =>
+                                  current === model ? null : current
+                                )
+                              }
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                handleColumnDrop(model);
+                                setDragModel(null);
+                                setDragOverModel(null);
+                              }}
+                              className={`group/col min-w-[140px] px-2 py-1 text-left align-top font-mono text-[11px] font-normal text-zinc-400 transition-colors ${
+                                dragOverModel === model
+                                  ? "rounded-md bg-blue-950/60 ring-1 ring-blue-600"
+                                  : ""
+                              } ${dragModel === model ? "opacity-40" : ""}`}
                               title={model}
                             >
-                              {model}
+                              <div
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.effectAllowed = "move";
+                                  e.dataTransfer.setData("text/plain", model);
+                                  setDragModel(model);
+                                }}
+                                onDragEnd={() => {
+                                  setDragModel(null);
+                                  setDragOverModel(null);
+                                }}
+                                className="flex cursor-grab items-start gap-1 active:cursor-grabbing"
+                              >
+                                <BsGripVertical className="mt-0.5 shrink-0 text-zinc-600 opacity-0 transition-opacity group-hover/col:opacity-100" />
+                                <span className="min-w-0 flex-1">{model}</span>
+                              </div>
+                              {editingNotesModel === model ? (
+                                <input
+                                  autoFocus
+                                  value={notesDraft}
+                                  onChange={(e) =>
+                                    setNotesDraft(e.target.value)
+                                  }
+                                  onBlur={() => void saveNotes(model)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      void saveNotes(model);
+                                    } else if (e.key === "Escape") {
+                                      setEditingNotesModel(null);
+                                    }
+                                  }}
+                                  placeholder="Notes for this model…"
+                                  className="mt-1 w-full rounded border border-zinc-600 bg-zinc-950 px-1.5 py-0.5 font-sans text-[11px] text-zinc-200 placeholder:text-zinc-600"
+                                />
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setEditingNotesModel(model);
+                                    setNotesDraft(
+                                      matrix.model_notes[model] ?? ""
+                                    );
+                                  }}
+                                  title="Click to edit notes"
+                                  className={`mt-1 block w-full truncate rounded px-1 py-0.5 text-left font-sans text-[11px] transition-colors hover:bg-zinc-800 ${
+                                    matrix.model_notes[model]
+                                      ? "text-amber-200/90"
+                                      : "text-zinc-600 opacity-0 group-hover/col:opacity-100"
+                                  }`}
+                                >
+                                  {matrix.model_notes[model] || "+ add note"}
+                                </button>
+                              )}
                             </th>
                           ))}
                         </tr>

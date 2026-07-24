@@ -120,6 +120,13 @@ CREATE TABLE IF NOT EXISTS eval_sessions (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_eval_sessions_active
   ON eval_sessions(is_active) WHERE is_active = 1;
+CREATE TABLE IF NOT EXISTS eval_session_models (
+  session_id TEXT NOT NULL,
+  model      TEXT NOT NULL,
+  position   INTEGER,
+  notes      TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (session_id, model)
+);
 CREATE TABLE IF NOT EXISTS llm_calls (
   run_id       TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
   step         INTEGER NOT NULL,

@@ -81,8 +81,18 @@ class SessionMatrixResponse(BaseModel):
     set_missing: bool
     rows: List[MatrixRowModel]
     models: List[str]
+    model_notes: Dict[str, str]
     cells: List[MatrixCellModel]
     unmatched_run_count: int
+
+
+class ModelOrderRequest(BaseModel):
+    models: List[str]
+
+
+class ModelNotesRequest(BaseModel):
+    model: str
+    notes: str
 
 
 def _set_info_to_model(info: eval_sets.EvalSetInfo) -> EvalSetSummaryModel:
@@ -287,7 +297,25 @@ async def get_session_matrix(session_id: str) -> SessionMatrixResponse:
         for filename in filenames_by_sha.get(sha, []):
             add_run(filename, row, "ui")
 
-    models = sorted(model_first_seen, key=lambda m: model_first_seen[m])
+    # Saved per-session column order wins; models without a saved position
+    # append afterwards in first-use order.
+    meta = eval_sessions.get_model_meta(session_id)
+    positions = {
+        model: m.position for model, m in meta.items() if m.position is not None
+    }
+    models = sorted(
+        model_first_seen,
+        key=lambda m: (
+            0 if m in positions else 1,
+            positions.get(m, 0),
+            model_first_seen[m],
+        ),
+    )
+    model_notes = {
+        model: meta[model].notes
+        for model in models
+        if model in meta and meta[model].notes
+    }
     cells = [
         MatrixCellModel(filename=filename, model=model, runs=runs)
         for (filename, model), runs in cell_runs.items()
@@ -299,6 +327,27 @@ async def get_session_matrix(session_id: str) -> SessionMatrixResponse:
         set_missing=set_missing,
         rows=rows,
         models=models,
+        model_notes=model_notes,
         cells=cells,
         unmatched_run_count=unmatched_run_count,
     )
+
+
+@router.put("/eval-sessions/{session_id}/model-order")
+async def set_session_model_order(
+    session_id: str, request: ModelOrderRequest
+) -> Dict[str, str]:
+    if eval_sessions.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    eval_sessions.set_model_order(session_id, request.models)
+    return {"status": "ok"}
+
+
+@router.put("/eval-sessions/{session_id}/model-notes")
+async def set_session_model_notes(
+    session_id: str, request: ModelNotesRequest
+) -> Dict[str, str]:
+    if eval_sessions.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    eval_sessions.set_model_notes(session_id, request.model, request.notes)
+    return {"status": "ok"}

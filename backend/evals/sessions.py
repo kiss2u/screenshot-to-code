@@ -163,6 +163,58 @@ def resolve_session_for_run(set_name: str) -> EvalSession:
     return active
 
 
+@dataclass
+class SessionModelMeta:
+    position: Optional[int]
+    notes: str
+
+
+def get_model_meta(session_id: str) -> dict[str, SessionModelMeta]:
+    conn = open_index_db()
+    try:
+        rows = conn.execute(
+            "SELECT model, position, notes FROM eval_session_models "
+            "WHERE session_id = ?",
+            (session_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {
+        row[0]: SessionModelMeta(position=row[1], notes=row[2] or "")
+        for row in rows
+    }
+
+
+def set_model_order(session_id: str, models: list[str]) -> None:
+    """Persist the column order; models not listed keep their notes."""
+    conn = open_index_db()
+    try:
+        for position, model in enumerate(models):
+            conn.execute(
+                "INSERT INTO eval_session_models (session_id, model, position) "
+                "VALUES (?, ?, ?) "
+                "ON CONFLICT(session_id, model) DO UPDATE SET position = ?",
+                (session_id, model, position, position),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_model_notes(session_id: str, model: str, notes: str) -> None:
+    conn = open_index_db()
+    try:
+        conn.execute(
+            "INSERT INTO eval_session_models (session_id, model, notes) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(session_id, model) DO UPDATE SET notes = ?",
+            (session_id, model, notes, notes),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def completed_eval_inputs(session_id: str, model: str, stack: str) -> set[str]:
     """Input filenames already completed in this session for (model, stack)."""
     conn = open_index_db()
