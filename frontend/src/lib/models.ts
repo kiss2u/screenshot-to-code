@@ -1,11 +1,17 @@
 // Keep in sync with backend (llm.py)
 // Order here matches dropdown order
 export enum CodeGenerationModel {
+  CLAUDE_OPUS_5_LOW = "claude-opus-5 (low effort)",
+  CLAUDE_OPUS_5_MEDIUM = "claude-opus-5 (medium effort)",
+  CLAUDE_OPUS_5_HIGH = "claude-opus-5 (high effort)",
+  CLAUDE_OPUS_5_XHIGH = "claude-opus-5 (xhigh effort)",
+  CLAUDE_OPUS_5_MAX = "claude-opus-5 (max effort)",
   CLAUDE_OPUS_4_8_LOW = "claude-opus-4-8 (low effort)",
   CLAUDE_OPUS_4_8_MEDIUM = "claude-opus-4-8 (medium effort)",
   CLAUDE_OPUS_4_8_HIGH = "claude-opus-4-8 (high effort)",
   CLAUDE_OPUS_4_8_XHIGH = "claude-opus-4-8 (xhigh effort)",
   CLAUDE_OPUS_4_8_MAX = "claude-opus-4-8 (max effort)",
+  CLAUDE_FABLE_5_MAX = "claude-fable-5 (max effort)",
   CLAUDE_SONNET_4_6 = "claude-sonnet-4-6",
   GPT_5_5_NONE = "gpt-5.5 (no thinking)",
   GPT_5_5_LOW = "gpt-5.5 (low thinking)",
@@ -107,6 +113,21 @@ export const CODE_GENERATION_MODEL_DESCRIPTIONS: {
   "gpt-5.4-mini (low thinking)": {
     name: "GPT 5.4 Mini (low)",
   },
+  "claude-opus-5 (low effort)": {
+    name: "Claude Opus 5 (low)",
+  },
+  "claude-opus-5 (medium effort)": {
+    name: "Claude Opus 5 (medium)",
+  },
+  "claude-opus-5 (high effort)": {
+    name: "Claude Opus 5 (high)",
+  },
+  "claude-opus-5 (xhigh effort)": {
+    name: "Claude Opus 5 (xhigh)",
+  },
+  "claude-opus-5 (max effort)": {
+    name: "Claude Opus 5 (max)",
+  },
   "claude-opus-4-8 (low effort)": {
     name: "Claude Opus 4.8 (low)",
   },
@@ -121,6 +142,9 @@ export const CODE_GENERATION_MODEL_DESCRIPTIONS: {
   },
   "claude-opus-4-8 (max effort)": {
     name: "Claude Opus 4.8 (max)",
+  },
+  "claude-fable-5 (max effort)": {
+    name: "Claude Fable 5 (max)",
   },
   "claude-sonnet-4-6": { name: "Claude Sonnet 4.6" },
   "gemini-3.5-flash (high thinking)": {

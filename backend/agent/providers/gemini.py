@@ -5,7 +5,7 @@ import uuid
 
 import httpx
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List, Optional, cast
 
 from google import genai
 from google.genai import types
@@ -18,9 +18,10 @@ from agent.providers.base import (
     ProviderTurn,
     StreamEvent,
 )
-from agent.providers.pricing import MODEL_PRICING
-from agent.providers.token_usage import TokenUsage
+from costs.pricing import MODEL_PRICING
+from costs.token_usage import TokenUsage
 from agent.tools import CanonicalToolDefinition, ToolCall
+from fs_logging.agent_runs import AgentRunRecorder
 from fs_logging.prompt_reports import PromptReportLogger
 from llm import Llm
 
@@ -281,11 +282,13 @@ class GeminiProviderSession(ProviderSession):
         model: Llm,
         prompt_messages: List[ChatCompletionMessageParam],
         tools: List[types.Tool],
+        recorder: Optional[AgentRunRecorder] = None,
     ):
         self._client = client
         self._model = model
         self._tools = tools
         self._total_usage = TokenUsage()
+        self._recorder = recorder
         self._prompt_report_logger = PromptReportLogger(
             provider="gemini",
             model=model,
@@ -311,13 +314,16 @@ class GeminiProviderSession(ProviderSession):
             tools=self._tools,
         )
 
-        self._prompt_report_logger.record_request(
-            {
-                "model": api_model_name,
-                "contents": self._contents,
-                "config": config,
-            }
-        )
+        request_payload = {
+            "model": api_model_name,
+            "contents": self._contents,
+            "config": config,
+        }
+        self._prompt_report_logger.record_request(request_payload)
+        if self._recorder is not None:
+            self._recorder.record_llm_request(
+                "gemini", api_model_name, request_payload
+            )
 
         stream = await self._client.aio.models.generate_content_stream(
             model=api_model_name,
@@ -336,6 +342,11 @@ class GeminiProviderSession(ProviderSession):
         if turn_usage is not None:
             self._prompt_report_logger.record_usage(turn_usage)
             self._total_usage.accumulate(turn_usage)
+
+        if self._recorder is not None:
+            self._recorder.record_llm_response(
+                state.assistant_text, state.tool_calls, turn_usage
+            )
 
         assistant_turn = (
             types.Content(role=state.model_role, parts=state.model_parts)

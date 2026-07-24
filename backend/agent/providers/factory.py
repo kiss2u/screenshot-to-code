@@ -11,6 +11,7 @@ from agent.providers.gemini import GeminiProviderSession, serialize_gemini_tools
 from agent.providers.openai import OpenAIProviderSession, serialize_openai_tools
 from agent.tools import canonical_tool_definitions
 from config import REPLICATE_API_KEY
+from fs_logging.agent_runs import AgentRunRecorder
 from llm import ANTHROPIC_MODELS, GEMINI_MODELS, OPENAI_MODELS, Llm
 from preview_screenshot import is_screenshot_preview_available
 
@@ -25,6 +26,7 @@ def create_provider_session(
     gemini_api_key: Optional[str],
     replicate_api_key: Optional[str],
     should_extract_assets: bool = True,
+    recorder: Optional[AgentRunRecorder] = None,
 ) -> ProviderSession:
     canonical_tools = canonical_tool_definitions(
         image_generation_enabled=should_generate_images,
@@ -46,6 +48,7 @@ def create_provider_session(
             model=model,
             prompt_messages=prompt_messages,
             tools=serialize_openai_tools(canonical_tools),
+            recorder=recorder,
         )
 
     if model in ANTHROPIC_MODELS:
@@ -58,6 +61,7 @@ def create_provider_session(
             model=model,
             prompt_messages=prompt_messages,
             tools=serialize_anthropic_tools(canonical_tools),
+            recorder=recorder,
         )
 
     if model in GEMINI_MODELS:
@@ -70,6 +74,7 @@ def create_provider_session(
             model=model,
             prompt_messages=prompt_messages,
             tools=serialize_gemini_tools(canonical_tools),
+            recorder=recorder,
         )
 
     raise ValueError(f"Unsupported model: {model.value}")

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
-from agent.providers.token_usage import TokenUsage
+from costs.token_usage import TokenUsage
 from fs_logging.prompt_reports import (
     PROMPT_REPORT_FILENAME_PATTERN,
     PromptReportLogger,

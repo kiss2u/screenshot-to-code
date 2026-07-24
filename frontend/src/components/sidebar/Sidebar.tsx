@@ -433,7 +433,7 @@ function Sidebar({
                 className="text-[11px] font-medium tabular-nums text-gray-400 dark:text-gray-500"
                 data-testid="total-generation-time"
               >
-                Total time {totalGenerationTime}
+                {totalGenerationTime}
               </span>
             )}
             <button

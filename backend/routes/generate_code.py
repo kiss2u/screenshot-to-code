@@ -1,5 +1,7 @@
 import asyncio
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from abc import ABC, abstractmethod
 import traceback
 from typing import Callable, Awaitable
@@ -60,6 +62,7 @@ from uploaded_assets import (
     infer_local_asset_base_url,
 )
 from agent.runner import Agent
+from fs_logging.agent_runs import AgentRunRecorder
 from routes.model_choice_sets import (
     ALL_KEYS_MODELS_DEFAULT,
     ALL_KEYS_MODELS_TEXT_CREATE,
@@ -559,6 +562,10 @@ class AgenticGenerationStage:
         asset_base_url: str,
         option_codes: List[str] | None,
         should_extract_assets: bool = True,
+        generation_id: str | None = None,
+        stack: str | None = None,
+        input_mode: str | None = None,
+        generation_type: str | None = None,
     ):
         self.send_message = send_message
         self.openai_api_key = openai_api_key
@@ -571,6 +578,13 @@ class AgenticGenerationStage:
         self.file_state = file_state
         self.asset_base_url = asset_base_url
         self.option_codes = option_codes or []
+        self.generation_id = (
+            generation_id
+            or f"gen_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        )
+        self.stack = stack
+        self.input_mode = input_mode
+        self.generation_type = generation_type
 
     async def process_variants(
         self,
@@ -618,6 +632,14 @@ class AgenticGenerationStage:
                     event_id,
                 )
 
+            recorder = AgentRunRecorder(
+                generation_id=self.generation_id,
+                variant_index=index,
+                entry_point="websocket",
+                stack=self.stack,
+                input_mode=self.input_mode,
+                generation_type=self.generation_type,
+            )
             runner = Agent(
                 send_message=send_runner_message,
                 variant_index=index,
@@ -631,6 +653,7 @@ class AgenticGenerationStage:
                 asset_base_url=self.asset_base_url,
                 initial_file_state=self.file_state,
                 option_codes=self.option_codes,
+                recorder=recorder,
             )
             completion = await runner.run(model, prompt_messages)
             if completion:
@@ -814,6 +837,9 @@ class CodeGenerationMiddleware(Middleware):
                 file_state=context.extracted_params.file_state,
                 asset_base_url=context.extracted_params.asset_base_url,
                 option_codes=context.extracted_params.option_codes,
+                stack=str(context.extracted_params.stack),
+                input_mode=str(context.extracted_params.input_mode),
+                generation_type=context.extracted_params.generation_type,
             )
 
             context.variant_completions = await generation_stage.process_variants(

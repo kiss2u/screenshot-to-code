@@ -4,7 +4,7 @@ import copy
 import json
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List, Optional, cast
 
 from anthropic import AsyncAnthropic
 from openai.types.chat import ChatCompletionMessageParam
@@ -22,14 +22,20 @@ from agent.providers.anthropic.image import (
     process_image,
     process_image_bytes,
 )
-from agent.providers.pricing import MODEL_PRICING
-from agent.providers.token_usage import TokenUsage
+from costs.pricing import MODEL_PRICING
+from costs.token_usage import TokenUsage
 from agent.tools import CanonicalToolDefinition, ToolCall, parse_json_arguments
+from fs_logging.agent_runs import AgentRunRecorder
 from fs_logging.prompt_reports import PromptReportLogger
 from llm import Llm
 
 THINKING_MODELS: set[str] = set()
 ADAPTIVE_THINKING_MODELS = {
+    Llm.CLAUDE_OPUS_5_LOW.value,
+    Llm.CLAUDE_OPUS_5_MEDIUM.value,
+    Llm.CLAUDE_OPUS_5_HIGH.value,
+    Llm.CLAUDE_OPUS_5_XHIGH.value,
+    Llm.CLAUDE_OPUS_5_MAX.value,
     Llm.CLAUDE_OPUS_4_8_LOW.value,
     Llm.CLAUDE_OPUS_4_8_MEDIUM.value,
     Llm.CLAUDE_OPUS_4_8_HIGH.value,
@@ -44,6 +50,11 @@ ADAPTIVE_THINKING_MODELS = {
 }
 
 ANTHROPIC_MODEL_CONFIG: dict[Llm, dict[str, str]] = {
+    Llm.CLAUDE_OPUS_5_LOW: {"api_name": "claude-opus-5", "effort": "low"},
+    Llm.CLAUDE_OPUS_5_MEDIUM: {"api_name": "claude-opus-5", "effort": "medium"},
+    Llm.CLAUDE_OPUS_5_HIGH: {"api_name": "claude-opus-5", "effort": "high"},
+    Llm.CLAUDE_OPUS_5_XHIGH: {"api_name": "claude-opus-5", "effort": "xhigh"},
+    Llm.CLAUDE_OPUS_5_MAX: {"api_name": "claude-opus-5", "effort": "max"},
     Llm.CLAUDE_OPUS_4_8_LOW: {"api_name": "claude-opus-4-8", "effort": "low"},
     Llm.CLAUDE_OPUS_4_8_MEDIUM: {"api_name": "claude-opus-4-8", "effort": "medium"},
     Llm.CLAUDE_OPUS_4_8_HIGH: {"api_name": "claude-opus-4-8", "effort": "high"},
@@ -314,11 +325,13 @@ class AnthropicProviderSession(ProviderSession):
         model: Llm,
         prompt_messages: List[ChatCompletionMessageParam],
         tools: List[Dict[str, Any]],
+        recorder: Optional[AgentRunRecorder] = None,
     ):
         self._client = client
         self._model = model
         self._tools = tools
         self._total_usage = TokenUsage()
+        self._recorder = recorder
         self._prompt_report_logger = PromptReportLogger(
             provider="anthropic",
             model=model,
@@ -368,6 +381,10 @@ class AnthropicProviderSession(ProviderSession):
             stream_kwargs["temperature"] = 0.0
 
         self._prompt_report_logger.record_request(stream_kwargs)
+        if self._recorder is not None:
+            self._recorder.record_llm_request(
+                "anthropic", _get_anthropic_api_model_name(self._model), stream_kwargs
+            )
 
         state = AnthropicParseState()
         async with self._client.messages.stream(**stream_kwargs) as stream:
@@ -380,6 +397,10 @@ class AnthropicProviderSession(ProviderSession):
         self._total_usage.accumulate(turn_usage)
 
         tool_calls = _extract_tool_calls(final_message)
+        if self._recorder is not None:
+            self._recorder.record_llm_response(
+                state.assistant_text, tool_calls, turn_usage
+            )
         return ProviderTurn(
             assistant_text=state.assistant_text,
             tool_calls=tool_calls,

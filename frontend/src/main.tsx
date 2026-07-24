@@ -9,6 +9,8 @@ import BestOfNEvalsPage from "./components/evals/BestOfNEvalsPage.tsx";
 import AllEvalsPage from "./components/evals/AllEvalsPage.tsx";
 import OpenAIInputComparePage from "./components/evals/OpenAIInputComparePage.tsx";
 import PromptReportsPage from "./components/evals/PromptReportsPage.tsx";
+import AgentRunsPage from "./components/evals/AgentRunsPage.tsx";
+import EvalSessionsPage from "./components/evals/EvalSessionsPage.tsx";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -23,6 +25,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           element={<OpenAIInputComparePage />}
         />
         <Route path="/evals/prompt-reports" element={<PromptReportsPage />} />
+        <Route path="/evals/agent-runs" element={<AgentRunsPage />} />
+        <Route path="/evals/sessions" element={<EvalSessionsPage />} />
       </Routes>
     </Router>
     <Toaster toastOptions={{ className: "dark:bg-zinc-950 dark:text-white" }} />

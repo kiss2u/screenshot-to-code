@@ -1,3 +1,6 @@
+import uuid
+from datetime import datetime
+
 from config import (
     ANTHROPIC_API_KEY,
     GEMINI_API_KEY,
@@ -8,13 +11,22 @@ from config import (
 )
 from llm import Llm, OPENAI_MODELS, ANTHROPIC_MODELS, GEMINI_MODELS
 from agent.runner import Agent
+from fs_logging.agent_runs import AgentRunRecorder
 from prompts.create.image import build_image_prompt_messages
 from prompts.prompt_types import Stack
 from openai.types.chat import ChatCompletionMessageParam
 from typing import Any
 
 
-async def generate_code_for_image(image_url: str, stack: Stack, model: Llm) -> str:
+async def generate_code_for_image(
+    image_url: str,
+    stack: Stack,
+    model: Llm,
+    *,
+    eval_set: str | None = None,
+    eval_session_id: str | None = None,
+    input_file: str | None = None,
+) -> str:
     prompt_messages = build_image_prompt_messages(
         image_data_urls=[image_url],
         stack=stack,
@@ -40,6 +52,19 @@ async def generate_code_for_image(image_url: str, stack: Stack, model: Llm) -> s
 
     print(f"[EVALS] Using agent runner for model: {model.value}")
 
+    recorder = AgentRunRecorder(
+        generation_id=(
+            f"gen_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        ),
+        variant_index=0,
+        entry_point="eval",
+        stack=str(stack),
+        input_mode="image",
+        generation_type="create",
+        eval_session=eval_session_id,
+        eval_set=eval_set,
+        input_file=input_file,
+    )
     runner = Agent(
         send_message=send_message,
         variant_index=0,
@@ -54,5 +79,6 @@ async def generate_code_for_image(image_url: str, stack: Stack, model: Llm) -> s
         asset_base_url=LOCAL_ASSET_BASE_URL,
         initial_file_state=None,
         option_codes=None,
+        recorder=recorder,
     )
     return await runner.run(model, prompt_messages)

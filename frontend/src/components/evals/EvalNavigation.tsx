@@ -40,6 +40,20 @@ function EvalNavigation() {
         >
           Prompt Reports
         </Link>
+
+        <Link
+          to="/evals/agent-runs"
+          className="hover:text-blue-300 transition-colors"
+        >
+          Agent Runs
+        </Link>
+
+        <Link
+          to="/evals/sessions"
+          className="hover:text-blue-300 transition-colors"
+        >
+          Sessions
+        </Link>
       </div>
       
       <Link
