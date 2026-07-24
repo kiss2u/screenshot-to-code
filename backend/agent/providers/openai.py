@@ -4,7 +4,7 @@ import copy
 import json
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
@@ -20,6 +20,7 @@ from agent.providers.pricing import MODEL_PRICING
 from agent.providers.token_usage import TokenUsage
 from agent.state import ensure_str
 from agent.tools import CanonicalToolDefinition, ToolCall, parse_json_arguments
+from fs_logging.agent_runs import AgentRunRecorder
 from fs_logging.prompt_reports import PromptReportLogger
 from llm import Llm, get_openai_api_name, get_openai_reasoning_effort
 
@@ -422,11 +423,13 @@ class OpenAIProviderSession(ProviderSession):
         model: Llm,
         prompt_messages: List[ChatCompletionMessageParam],
         tools: List[Dict[str, Any]],
+        recorder: Optional["AgentRunRecorder"] = None,
     ):
         self._client = client
         self._model = model
         self._tools = tools
         self._total_usage = TokenUsage()
+        self._recorder = recorder
         self._prompt_report_logger = PromptReportLogger(
             provider="openai",
             model=model,
@@ -455,6 +458,8 @@ class OpenAIProviderSession(ProviderSession):
             params["reasoning"] = {"effort": reasoning_effort, "summary": "auto"}
 
         self._prompt_report_logger.record_request(params)
+        if self._recorder is not None:
+            self._recorder.record_llm_request("openai", model_name, params)
 
         state = OpenAIResponsesParseState()
         stream = await self._client.responses.create(**params)  # type: ignore
@@ -465,7 +470,12 @@ class OpenAIProviderSession(ProviderSession):
             self._prompt_report_logger.record_usage(state.turn_usage)
             self._total_usage.accumulate(state.turn_usage)
 
-        return _build_provider_turn(state)
+        turn = _build_provider_turn(state)
+        if self._recorder is not None:
+            self._recorder.record_llm_response(
+                turn.assistant_text, turn.tool_calls, state.turn_usage
+            )
+        return turn
 
     @staticmethod
     def _image_ref(part: Any) -> str | None:

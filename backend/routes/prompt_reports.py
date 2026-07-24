@@ -181,6 +181,11 @@ async def prune_prompt_reports(
     deleted_count = 0
     freed_bytes = 0
     for entry in os.scandir(run_logs_directory):
+        # agent_runs has its own index + prune endpoint (/agent-runs/prune);
+        # rmtree'ing it here would destroy the SQLite index and fresh runs.
+        if entry.is_dir() and entry.name == "agent_runs":
+            continue
+
         # The prompt_reports subdirectory itself is permanent; prune inside it.
         if entry.is_dir() and entry.name == "prompt_reports":
             for report_entry in os.scandir(entry.path):
