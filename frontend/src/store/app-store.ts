@@ -38,8 +38,16 @@ export const useAppStore = create<AppStore>((set) => ({
 
   inSelectAndEditMode: false,
   toggleInSelectAndEditMode: () =>
-    set((state) => ({ inSelectAndEditMode: !state.inSelectAndEditMode })),
-  disableInSelectAndEditMode: () => set({ inSelectAndEditMode: false }),
+    set((state) =>
+      state.inSelectAndEditMode
+        ? { inSelectAndEditMode: false, selectedElement: null }
+        : { inSelectAndEditMode: true }
+    ),
+  // Exiting selection mode and releasing its locked target are one action.
+  // Keeping this atomic prevents a stale iframe element from surviving a
+  // version change until PreviewComponent's effects get a chance to run.
+  disableInSelectAndEditMode: () =>
+    set({ inSelectAndEditMode: false, selectedElement: null }),
 
   selectedElement: null,
   setSelectedElement: (element: HTMLElement | null) =>

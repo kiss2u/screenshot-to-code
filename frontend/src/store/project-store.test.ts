@@ -1,4 +1,5 @@
 import { Commit, VariantStatus } from "../components/commits/types";
+import { useAppStore } from "./app-store";
 import { useProjectStore } from "./project-store";
 
 function createGeneratingCommit(): Commit {
@@ -13,6 +14,40 @@ function createGeneratingCommit(): Commit {
     inputs: { text: "Create a page", images: [] },
   };
 }
+
+describe("version navigation", () => {
+  const selectedElement = { tagName: "BUTTON" } as HTMLElement;
+
+  beforeEach(() => {
+    useProjectStore.setState({ head: "latest" });
+    useAppStore.setState({
+      inSelectAndEditMode: true,
+      selectedElement,
+    });
+  });
+
+  afterEach(() => {
+    useAppStore.setState({
+      inSelectAndEditMode: false,
+      selectedElement: null,
+    });
+  });
+
+  it("exits select-and-edit and clears its target when the head changes", () => {
+    useProjectStore.getState().setHead("previous");
+
+    expect(useProjectStore.getState().head).toBe("previous");
+    expect(useAppStore.getState().inSelectAndEditMode).toBe(false);
+    expect(useAppStore.getState().selectedElement).toBeNull();
+  });
+
+  it("does not exit select-and-edit when the requested head is already active", () => {
+    useProjectStore.getState().setHead("latest");
+
+    expect(useAppStore.getState().inSelectAndEditMode).toBe(true);
+    expect(useAppStore.getState().selectedElement).toBe(selectedElement);
+  });
+});
 
 describe("variant completion timestamps", () => {
   beforeEach(() => {
