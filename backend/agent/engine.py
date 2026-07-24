@@ -189,7 +189,7 @@ class AgentEngine:
             self._mark_preview_length(tool_event_id, len(content))
 
     async def _run_with_session(self, session: ProviderSession) -> str:
-        max_steps = 20
+        max_steps = 30
 
         for _ in range(max_steps):
             assistant_event_id = self._next_event_id("assistant")
