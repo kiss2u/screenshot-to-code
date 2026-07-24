@@ -37,6 +37,22 @@ interface FailedTask {
   error: string;
 }
 
+interface EvalSetSummary {
+  name: string;
+  display_name: string;
+  image_count: number;
+}
+
+interface EvalSetImage {
+  filename: string;
+}
+
+interface ActiveEvalSession {
+  session_id: string;
+  name: string;
+  eval_set: string;
+}
+
 function RunEvalsPage() {
   const faviconFlashIntervalRef = useRef<number | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -46,6 +62,14 @@ function RunEvalsPage() {
   const [selectedStack, setSelectedStack] = useState<string>("html_tailwind");
   const [diffMode, setDiffMode] = useState(true);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [inputSource, setInputSource] = useState<"legacy" | "set">("legacy");
+  const [evalSets, setEvalSets] = useState<EvalSetSummary[]>([]);
+  const [selectedSet, setSelectedSet] = useState("");
+  const [setImages, setSetImages] = useState<EvalSetImage[]>([]);
+  const [selectedSetFiles, setSelectedSetFiles] = useState<string[]>([]);
+  const [activeSession, setActiveSession] = useState<ActiveEvalSession | null>(
+    null
+  );
   const [showPaths, setShowPaths] = useState<boolean>(false);
   const [completedTasks, setCompletedTasks] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
@@ -65,6 +89,57 @@ function RunEvalsPage() {
     };
     fetchModels();
   }, []);
+
+  useEffect(() => {
+    const fetchEvalSets = async () => {
+      try {
+        const response = await fetch(`${HTTP_BACKEND_URL}/eval-sets`);
+        const data: EvalSetSummary[] = await response.json();
+        setEvalSets(data);
+        if (data.length > 0) {
+          setSelectedSet((current) => current || data[0].name);
+        }
+      } catch (error) {
+        console.error("Error fetching eval sets", error);
+      }
+    };
+    fetchEvalSets();
+  }, []);
+
+  const refreshActiveSession = useCallback(async () => {
+    try {
+      const response = await fetch(`${HTTP_BACKEND_URL}/eval-sessions/active`);
+      setActiveSession(await response.json());
+    } catch (error) {
+      console.error("Error fetching active session", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (inputSource === "set") refreshActiveSession();
+  }, [inputSource, refreshActiveSession]);
+
+  useEffect(() => {
+    if (inputSource !== "set" || !selectedSet) return;
+    const fetchSetImages = async () => {
+      try {
+        const response = await fetch(
+          `${HTTP_BACKEND_URL}/eval-sets/${encodeURIComponent(selectedSet)}`
+        );
+        if (!response.ok) throw new Error("Request failed");
+        const data = await response.json();
+        setSetImages(data.images);
+        setSelectedSetFiles(
+          data.images.map((image: EvalSetImage) => image.filename)
+        );
+      } catch (error) {
+        console.error("Error fetching set images", error);
+        setSetImages([]);
+        setSelectedSetFiles([]);
+      }
+    };
+    fetchSetImages();
+  }, [inputSource, selectedSet]);
 
   useEffect(() => {
     return () => {
@@ -134,7 +209,15 @@ function RunEvalsPage() {
       setSkippedExistingTasks(0);
       stopFaviconFlash();
 
-      const runFiles = filesToRun ?? selectedFiles;
+      const isSetRun = inputSource === "set" && selectedSet;
+      const runFiles =
+        filesToRun ??
+        (isSetRun
+          ? // Whole set = empty list so the backend resolves every image.
+            selectedSetFiles.length === setImages.length
+            ? []
+            : selectedSetFiles
+          : selectedFiles);
 
       const response = await fetch(`${HTTP_BACKEND_URL}/run_evals_stream`, {
         method: "POST",
@@ -146,6 +229,7 @@ function RunEvalsPage() {
           stack: selectedStack,
           files: runFiles,
           diff_mode: diffMode,
+          set_name: isSetRun ? selectedSet : null,
         }),
       });
 
@@ -273,7 +357,30 @@ function RunEvalsPage() {
     return `${selectedModels.slice(0, 2).join(", ")} +${selectedModels.length - 2} more`;
   };
 
-  const canRunEvals = selectedModels.length > 0 && selectedFiles.length > 0;
+  const canRunEvals =
+    selectedModels.length > 0 &&
+    (inputSource === "set"
+      ? Boolean(selectedSet) && selectedSetFiles.length > 0
+      : selectedFiles.length > 0);
+  const sessionSetMismatch =
+    inputSource === "set" &&
+    activeSession !== null &&
+    Boolean(selectedSet) &&
+    activeSession.eval_set !== selectedSet;
+
+  const startSessionForSelectedSet = async () => {
+    try {
+      const response = await fetch(`${HTTP_BACKEND_URL}/eval-sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eval_set: selectedSet }),
+      });
+      if (!response.ok) throw new Error("Request failed");
+      await refreshActiveSession();
+    } catch (error) {
+      console.error("Error starting session", error);
+    }
+  };
   const failedFilesForRerun = Array.from(
     new Set(failedTaskDetails.map((task) => task.inputFile).filter(Boolean))
   );
@@ -510,11 +617,113 @@ function RunEvalsPage() {
 
           {/* Input Files Section */}
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm lg:col-span-1 md:col-span-2">
-            <div className="border-b border-gray-200 px-4 py-3 bg-gray-50 rounded-t-lg">
+            <div className="border-b border-gray-200 px-4 py-3 bg-gray-50 rounded-t-lg flex items-center justify-between">
               <h2 className="font-medium">Select Input Files</h2>
+              <div className="flex rounded-md border border-gray-300 overflow-hidden text-xs">
+                {(
+                  [
+                    ["legacy", "Legacy inputs"],
+                    ["set", "Eval set"],
+                  ] as const
+                ).map(([source, label]) => (
+                  <button
+                    key={source}
+                    onClick={() => setInputSource(source)}
+                    className={`px-2.5 py-1 transition-colors ${
+                      inputSource === source
+                        ? "bg-blue-600 text-white"
+                        : "bg-white text-gray-600 hover:bg-gray-100"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="p-3">
-              <InputFileSelector onFilesSelected={handleFilesSelected} />
+              {inputSource === "legacy" ? (
+                <InputFileSelector onFilesSelected={handleFilesSelected} />
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <select
+                    value={selectedSet}
+                    onChange={(e) => setSelectedSet(e.target.value)}
+                    className="w-full py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    {evalSets.length === 0 && (
+                      <option value="">No eval sets found</option>
+                    )}
+                    {evalSets.map((set) => (
+                      <option key={set.name} value={set.name}>
+                        {set.display_name} ({set.image_count} images)
+                      </option>
+                    ))}
+                  </select>
+
+                  {sessionSetMismatch && activeSession && (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      Active session "{activeSession.name}" is pinned to set "
+                      {activeSession.eval_set}".{" "}
+                      <button
+                        onClick={() => void startSessionForSelectedSet()}
+                        className="font-medium underline hover:text-amber-900"
+                      >
+                        Start a new session for "{selectedSet}"
+                      </button>{" "}
+                      before running.
+                    </div>
+                  )}
+                  {!sessionSetMismatch && inputSource === "set" && (
+                    <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                      {activeSession
+                        ? `Runs will attach to session "${activeSession.name}" (set "${activeSession.eval_set}").`
+                        : "No active session — one will be created automatically."}
+                    </div>
+                  )}
+
+                  <div className="border rounded-md max-h-[220px] overflow-y-auto">
+                    <div className="grid grid-cols-1 divide-y divide-gray-100">
+                      {setImages.map((image) => {
+                        const checked = selectedSetFiles.includes(
+                          image.filename
+                        );
+                        return (
+                          <div
+                            key={image.filename}
+                            className={`flex items-center justify-between px-3 py-1.5 cursor-pointer hover:bg-gray-50 ${
+                              checked ? "bg-blue-50" : ""
+                            }`}
+                            onClick={() =>
+                              setSelectedSetFiles((previous) =>
+                                checked
+                                  ? previous.filter(
+                                      (f) => f !== image.filename
+                                    )
+                                  : [...previous, image.filename]
+                              )
+                            }
+                          >
+                            <span
+                              className="text-sm truncate"
+                              title={image.filename}
+                            >
+                              {image.filename}
+                            </span>
+                            {checked ? (
+                              <BsCheckLg className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                            ) : (
+                              <div className="h-3.5 w-3.5 border rounded-sm flex-shrink-0" />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Selected: {selectedSetFiles.length} / {setImages.length}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

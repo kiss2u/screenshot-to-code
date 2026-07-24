@@ -22,6 +22,7 @@ Recording must never break generation: every public method no-ops when
 disabled and swallows its own exceptions.
 """
 
+import base64
 import hashlib
 import json
 import os
@@ -31,13 +32,15 @@ import sqlite3
 import time
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, List, Optional, cast
 from urllib.parse import unquote, urlparse
+
+from openai.types.chat import ChatCompletionMessageParam
 
 from config import LOCAL_ASSET_DIR, PROMPT_REPORTS_ENABLED
 from llm import MODEL_PROVIDER, Llm
-from agent.providers.pricing import MODEL_PRICING
-from agent.providers.token_usage import TokenUsage
+from costs.pricing import MODEL_PRICING
+from costs.token_usage import TokenUsage
 from fs_logging.prompt_reports import get_run_logs_directory, to_serializable
 
 if TYPE_CHECKING:
@@ -100,10 +103,23 @@ CREATE TABLE IF NOT EXISTS runs (
   total_cost_usd    REAL,
   has_unpriced_calls INTEGER NOT NULL DEFAULT 0,
   run_dir           TEXT NOT NULL,
-  size_bytes        INTEGER
+  size_bytes        INTEGER,
+  eval_session      TEXT,
+  eval_set          TEXT,
+  input_file        TEXT,
+  input_image_sha256 TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_generation ON runs(generation_id);
 CREATE INDEX IF NOT EXISTS idx_runs_created ON runs(created_at);
+CREATE TABLE IF NOT EXISTS eval_sessions (
+  session_id TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  eval_set   TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  is_active  INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_eval_sessions_active
+  ON eval_sessions(is_active) WHERE is_active = 1;
 CREATE TABLE IF NOT EXISTS llm_calls (
   run_id       TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
   step         INTEGER NOT NULL,
@@ -123,6 +139,27 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 """
 
 
+def _migrate_runs_table(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after the first release.
+
+    ``CREATE TABLE IF NOT EXISTS`` never alters an existing table, so a
+    populated index.db from before these columns needs explicit ALTERs. The
+    matching indexes must live here too — creating them in ``_SCHEMA`` would
+    fail against an un-migrated table.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+    for column in ("eval_session", "eval_set", "input_file", "input_image_sha256"):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE runs ADD COLUMN {column} TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runs_eval_session ON runs(eval_session)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runs_input_sha ON runs(input_image_sha256)"
+    )
+    conn.commit()
+
+
 def open_index_db() -> sqlite3.Connection:
     os.makedirs(get_agent_runs_directory(), exist_ok=True)
     conn = sqlite3.connect(get_agent_runs_db_path(), timeout=5)
@@ -131,11 +168,47 @@ def open_index_db() -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_SCHEMA)
+    _migrate_runs_table(conn)
     return conn
 
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _first_input_image_sha256(prompt_messages: Any) -> Optional[str]:
+    """Digest of the first input image's raw bytes, or None.
+
+    Mirrors ``AgentEngine._extract_input_images`` — duplicated because this
+    module must not import ``agent.engine`` (the engine imports us). Since
+    eval inputs are base64-encoded file bytes verbatim, this digest equals
+    the sha256 of the PNG on disk, which is the matrix-matching invariant.
+    """
+    try:
+        messages = cast(List[ChatCompletionMessageParam], prompt_messages or [])
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") != "image_url":
+                    continue
+                image_url = part.get("image_url")
+                if not isinstance(image_url, dict):
+                    continue
+                url = cast(object, image_url.get("url"))
+                if (
+                    isinstance(url, str)
+                    and url.startswith("data:image/")
+                    and "," in url
+                ):
+                    payload = base64.b64decode(url.split(",", 1)[1])
+                    return hashlib.sha256(payload).hexdigest()
+    except Exception:
+        return None
+    return None
 
 
 def _guess_extension(url: str, content_type: Optional[str]) -> str:
@@ -163,6 +236,9 @@ class AgentRunRecorder:
         input_mode: Optional[str] = None,
         generation_type: Optional[str] = None,
         enabled: Optional[bool] = None,
+        eval_session: Optional[str] = None,
+        eval_set: Optional[str] = None,
+        input_file: Optional[str] = None,
     ) -> None:
         self.enabled = PROMPT_REPORTS_ENABLED if enabled is None else enabled
         self.generation_id = generation_id
@@ -171,6 +247,10 @@ class AgentRunRecorder:
         self.stack = stack
         self.input_mode = input_mode
         self.generation_type = generation_type
+        self.eval_session = eval_session
+        self.eval_set = eval_set
+        self.input_file = input_file
+        self._input_image_sha256: Optional[str] = None
         self.run_id = (
             f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
         )
@@ -249,6 +329,7 @@ class AgentRunRecorder:
             self._run_started_mono = time.perf_counter()
             self._model = model.value
             self._provider = MODEL_PROVIDER.get(model)
+            self._input_image_sha256 = _first_input_image_sha256(prompt_messages)
             self._append_event(
                 "run_start",
                 {
@@ -261,6 +342,10 @@ class AgentRunRecorder:
                     "stack": self.stack,
                     "input_mode": self.input_mode,
                     "generation_type": self.generation_type,
+                    "eval_session": self.eval_session,
+                    "eval_set": self.eval_set,
+                    "input_file": self.input_file,
+                    "input_image_sha256": self._input_image_sha256,
                     "prompt_messages": prompt_messages,
                 },
             )
@@ -268,8 +353,9 @@ class AgentRunRecorder:
                 """INSERT OR REPLACE INTO runs
                    (run_id, generation_id, variant_index, entry_point, provider,
                     model, stack, input_mode, generation_type, status,
-                    created_at, run_dir)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)""",
+                    created_at, run_dir, eval_session, eval_set, input_file,
+                    input_image_sha256)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)""",
                 (
                     self.run_id,
                     self.generation_id,
@@ -282,6 +368,10 @@ class AgentRunRecorder:
                     self.generation_type,
                     _now_iso(),
                     self.run_dir,
+                    self.eval_session,
+                    self.eval_set,
+                    self.input_file,
+                    self._input_image_sha256,
                 ),
             )
         except Exception as exc:
@@ -594,6 +684,10 @@ class AgentRunRecorder:
                 "stack": self.stack,
                 "input_mode": self.input_mode,
                 "generation_type": self.generation_type,
+                "eval_session": self.eval_session,
+                "eval_set": self.eval_set,
+                "input_file": self.input_file,
+                "input_image_sha256": self._input_image_sha256,
                 "status": status,
                 "error": error,
                 "completed_at": _now_iso(),

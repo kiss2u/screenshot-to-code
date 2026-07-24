@@ -16,8 +16,8 @@ from agent.providers.base import (
     ProviderTurn,
     StreamEvent,
 )
-from agent.providers.pricing import MODEL_PRICING
-from agent.providers.token_usage import TokenUsage
+from costs.pricing import MODEL_PRICING
+from costs.token_usage import TokenUsage
 from agent.state import ensure_str
 from agent.tools import CanonicalToolDefinition, ToolCall, parse_json_arguments
 from fs_logging.agent_runs import AgentRunRecorder
@@ -423,7 +423,7 @@ class OpenAIProviderSession(ProviderSession):
         model: Llm,
         prompt_messages: List[ChatCompletionMessageParam],
         tools: List[Dict[str, Any]],
-        recorder: Optional["AgentRunRecorder"] = None,
+        recorder: Optional[AgentRunRecorder] = None,
     ):
         self._client = client
         self._model = model

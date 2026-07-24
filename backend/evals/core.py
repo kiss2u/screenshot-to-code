@@ -18,7 +18,15 @@ from openai.types.chat import ChatCompletionMessageParam
 from typing import Any
 
 
-async def generate_code_for_image(image_url: str, stack: Stack, model: Llm) -> str:
+async def generate_code_for_image(
+    image_url: str,
+    stack: Stack,
+    model: Llm,
+    *,
+    eval_set: str | None = None,
+    eval_session_id: str | None = None,
+    input_file: str | None = None,
+) -> str:
     prompt_messages = build_image_prompt_messages(
         image_data_urls=[image_url],
         stack=stack,
@@ -53,6 +61,9 @@ async def generate_code_for_image(image_url: str, stack: Stack, model: Llm) -> s
         stack=str(stack),
         input_mode="image",
         generation_type="create",
+        eval_session=eval_session_id,
+        eval_set=eval_set,
+        input_file=input_file,
     )
     runner = Agent(
         send_message=send_message,

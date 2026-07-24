@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from agent.providers.pricing import ModelPricing
+from costs.pricing import ModelPricing
 
 
 @dataclass

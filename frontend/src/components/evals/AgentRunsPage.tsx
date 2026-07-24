@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { BsBoxArrowUpRight } from "react-icons/bs";
+import { useSearchParams } from "react-router-dom";
 
 import { HTTP_BACKEND_URL } from "../../config";
 import EvalNavigation from "./EvalNavigation";
@@ -47,6 +48,10 @@ interface AgentRunSummary {
   total_cost_usd: number | null;
   has_unpriced_calls: boolean;
   size_bytes: number | null;
+  eval_session: string | null;
+  eval_set: string | null;
+  input_file: string | null;
+  input_image_sha256: string | null;
 }
 
 interface AgentRunListResponse {
@@ -148,6 +153,7 @@ function SummaryStats({ run }: { run: AgentRunSummary }) {
 }
 
 function AgentRunsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [runs, setRuns] = useState<AgentRunSummary[]>([]);
   const [totalSizeBytes, setTotalSizeBytes] = useState(0);
   const [runsDirectory, setRunsDirectory] = useState("");
@@ -192,6 +198,7 @@ function AgentRunsPage() {
       setActiveTab("timeline");
       setIncludeDeltas(withDeltas);
       setExpandSignal({ mode: "best", version: 0 });
+      setSearchParams({ run: runId }, { replace: true });
       setIsLoadingDetail(true);
       try {
         const response = await fetch(
@@ -212,16 +219,22 @@ function AgentRunsPage() {
         setIsLoadingDetail(false);
       }
     },
-    []
+    [setSearchParams]
   );
 
   useEffect(() => {
     fetchRuns().then((loadedRuns) => {
-      if (loadedRuns.length > 0) {
+      // Deep link (?run=...) wins over the newest-run default so matrix
+      // cells and shared URLs land on the intended run.
+      const requestedRun = searchParams.get("run");
+      if (requestedRun) {
+        openRun(requestedRun);
+      } else if (loadedRuns.length > 0) {
         const groups = groupByGeneration(loadedRuns);
         openRun(groups[0].runs[0].run_id);
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchRuns, openRun]);
 
   const handlePrune = async () => {

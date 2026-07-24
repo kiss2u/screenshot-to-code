@@ -19,8 +19,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from agent.providers.pricing import MODEL_PRICING
-from agent.providers.token_usage import TokenUsage
+from costs.pricing import MODEL_PRICING
+from costs.token_usage import TokenUsage
 from agent.state import ensure_str
 from config import PROMPT_REPORTS_ENABLED
 from llm import Llm

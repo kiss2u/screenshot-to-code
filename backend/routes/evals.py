@@ -6,8 +6,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from evals.utils import image_to_data_url
 from evals.config import EVALS_DIR
-from typing import Set
+from typing import Optional, Set
 from evals.runner import run_image_evals, count_pending_eval_tasks
+from evals import sessions as eval_sessions
+from evals import sets as eval_sets
 from typing import List, Dict
 from llm import Llm
 from prompts.prompt_types import Stack
@@ -107,6 +109,47 @@ class RunEvalsRequest(BaseModel):
     stack: Stack
     files: List[str] = []  # Optional list of specific file paths to run evals on
     diff_mode: bool = False
+    # When set, inputs come from {EVALS_DIR}/sets/{set_name}/inputs and runs
+    # attach to the active eval session (auto-created when none exists).
+    set_name: Optional[str] = None
+
+
+def _resolve_set_run(
+    request: RunEvalsRequest,
+) -> tuple[Optional[str], Optional[eval_sessions.EvalSession], Dict[str, set[str]]]:
+    """Validate the requested set and resolve the session + per-model skips."""
+    if not request.set_name:
+        return None, None, {}
+    try:
+        set_info = eval_sets.get_set(request.set_name)
+    except eval_sets.InvalidSetNameError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except eval_sets.EvalSetNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Eval set not found: {request.set_name}"
+        )
+    if set_info.image_count == 0:
+        raise HTTPException(
+            status_code=400, detail=f"Eval set {request.set_name!r} has no images"
+        )
+    try:
+        session = eval_sessions.resolve_session_for_run(request.set_name)
+    except eval_sessions.SessionSetMismatchError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Active session {e.active_session.name!r} is pinned to set "
+                f"{e.active_session.eval_set!r}. Start a new session for set "
+                f"{request.set_name!r} first (POST /eval-sessions)."
+            ),
+        )
+    skip_per_model: Dict[str, set[str]] = {}
+    if request.diff_mode:
+        for model in request.models:
+            skip_per_model[model] = eval_sessions.completed_eval_inputs(
+                session.session_id, model, str(request.stack)
+            )
+    return request.set_name, session, skip_per_model
 
 
 class OpenAIInputCompareRequest(BaseModel):
@@ -182,6 +225,7 @@ async def compare_openai_inputs_for_evals(
 @router.post("/run_evals", response_model=List[str])
 async def run_evals(request: RunEvalsRequest) -> List[str]:
     """Run evaluations on selected images in the inputs directory for multiple models"""
+    eval_set, session, skip_per_model = _resolve_set_run(request)
     all_output_files: List[str] = []
 
     for model in request.models:
@@ -190,15 +234,21 @@ async def run_evals(request: RunEvalsRequest) -> List[str]:
             stack=request.stack,
             input_files=request.files,
             diff_mode=request.diff_mode,
+            eval_set=eval_set,
+            eval_session_id=session.session_id if session else None,
+            skip_input_files=skip_per_model.get(model),
         )
         all_output_files.extend(output_files)
 
     return all_output_files
 
 
-def _count_eval_files(selected_files: List[str]) -> int:
+def _count_eval_files(selected_files: List[str], set_name: Optional[str] = None) -> int:
     if selected_files:
         return len([f for f in selected_files if f.endswith(".png")])
+
+    if set_name:
+        return len(eval_sets.list_set_images(set_name))
 
     input_dir = os.path.join(EVALS_DIR, "inputs")
     return len([f for f in os.listdir(input_dir) if f.endswith(".png")])
@@ -210,6 +260,8 @@ async def run_evals_stream(request: RunEvalsRequest):
     if not request.models:
         raise HTTPException(status_code=400, detail="At least one model is required")
 
+    eval_set, session, skip_per_model = _resolve_set_run(request)
+
     per_model_task_counts: Dict[str, int] = {}
     per_model_skipped_existing: Dict[str, int] = {}
     if request.diff_mode:
@@ -220,11 +272,13 @@ async def run_evals_stream(request: RunEvalsRequest):
                 input_files=request.files,
                 n=N,
                 diff_mode=True,
+                eval_set=eval_set,
+                skip_input_files=skip_per_model.get(model),
             )
             per_model_task_counts[model] = pending_tasks
             per_model_skipped_existing[model] = skipped_tasks
     else:
-        per_model_task_count = _count_eval_files(request.files)
+        per_model_task_count = _count_eval_files(request.files, eval_set)
         for model in request.models:
             per_model_task_counts[model] = per_model_task_count
             per_model_skipped_existing[model] = 0
@@ -252,6 +306,9 @@ async def run_evals_stream(request: RunEvalsRequest):
                         "completed_tasks": 0,
                         "diff_mode": request.diff_mode,
                         "total_skipped_existing": total_skipped_existing,
+                        "eval_set": eval_set,
+                        "eval_session_id": session.session_id if session else None,
+                        "eval_session_name": session.name if session else None,
                     }
                 )
 
@@ -288,6 +345,9 @@ async def run_evals_stream(request: RunEvalsRequest):
                         input_files=request.files,
                         diff_mode=request.diff_mode,
                         progress_callback=on_progress,
+                        eval_set=eval_set,
+                        eval_session_id=session.session_id if session else None,
+                        skip_input_files=skip_per_model.get(model),
                     )
                     all_output_files.extend(output_files)
                     completed_offset += model_task_count

@@ -47,6 +47,13 @@ function EvalNavigation() {
         >
           Agent Runs
         </Link>
+
+        <Link
+          to="/evals/sessions"
+          className="hover:text-blue-300 transition-colors"
+        >
+          Sessions
+        </Link>
       </div>
       
       <Link

@@ -54,6 +54,10 @@ _RUN_COLUMNS = [
     "total_cost_usd",
     "has_unpriced_calls",
     "size_bytes",
+    "eval_session",
+    "eval_set",
+    "input_file",
+    "input_image_sha256",
 ]
 
 
@@ -85,6 +89,10 @@ class AgentRunSummary(BaseModel):
     total_cost_usd: Optional[float]
     has_unpriced_calls: bool
     size_bytes: Optional[int]
+    eval_session: Optional[str]
+    eval_set: Optional[str]
+    input_file: Optional[str]
+    input_image_sha256: Optional[str]
 
 
 class AgentRunListResponse(BaseModel):

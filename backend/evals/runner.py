@@ -8,6 +8,7 @@ from llm import Llm
 from config import LOCAL_ASSET_BASE_URL
 from prompts.prompt_types import Stack
 from .core import generate_code_for_image
+from .sets import get_set_inputs_dir
 from .utils import image_to_data_url
 from .config import EVALS_DIR
 
@@ -36,8 +37,15 @@ def normalize_local_asset_urls(html: str) -> str:
     return html
 
 
-def _resolve_eval_filenames(input_files: Optional[List[str]]) -> List[str]:
-    input_dir = EVALS_DIR + "/inputs"
+def _get_input_dir(eval_set: Optional[str]) -> str:
+    if eval_set:
+        return get_set_inputs_dir(eval_set)
+    return EVALS_DIR + "/inputs"
+
+
+def _resolve_eval_filenames(
+    input_files: Optional[List[str]], input_dir: str
+) -> List[str]:
     if input_files and len(input_files) > 0:
         return [os.path.basename(f) for f in input_files if f.endswith(".png")]
     return [f for f in os.listdir(input_dir) if f.endswith(".png")]
@@ -59,10 +67,20 @@ def count_pending_eval_tasks(
     input_files: Optional[List[str]] = None,
     n: int = 1,
     diff_mode: bool = False,
+    eval_set: Optional[str] = None,
+    skip_input_files: Optional[set[str]] = None,
 ) -> Tuple[int, int]:
-    evals = _resolve_eval_filenames(input_files)
+    evals = _resolve_eval_filenames(input_files, _get_input_dir(eval_set))
     if not diff_mode:
         return len(evals) * n, 0
+
+    # Set runs skip by session history (the caller queries the run index);
+    # day-named output folders are shared across sets, so file existence
+    # would produce false positives there.
+    if eval_set is not None:
+        skip = skip_input_files or set()
+        skipped = sum(n for f in evals if f in skip)
+        return len(evals) * n - skipped, skipped
 
     output_subfolder = get_eval_output_subfolder(stack=stack, model=model)
     pending_tasks = 0
@@ -84,6 +102,8 @@ async def generate_code_and_time(
     model: Llm,
     original_input_filename: str,
     attempt_idx: int,
+    eval_set: Optional[str] = None,
+    eval_session_id: Optional[str] = None,
 ) -> Tuple[str, int, Optional[str], Optional[float], Optional[Exception], int]:
     """
     Generates code for an image, measures the time taken, and returns identifiers
@@ -97,7 +117,12 @@ async def generate_code_and_time(
         start_time = time.perf_counter()
         try:
             content = await generate_code_for_image(
-                image_url=image_url, stack=stack, model=model
+                image_url=image_url,
+                stack=stack,
+                model=model,
+                eval_set=eval_set,
+                eval_session_id=eval_session_id,
+                input_file=original_input_filename,
             )
             end_time = time.perf_counter()
             duration = end_time - start_time
@@ -137,9 +162,12 @@ async def run_image_evals(
     input_files: Optional[List[str]] = None,
     diff_mode: bool = False,
     progress_callback: Optional[Callable[[dict[str, Any]], Any | Awaitable[Any]]] = None,
+    eval_set: Optional[str] = None,
+    eval_session_id: Optional[str] = None,
+    skip_input_files: Optional[set[str]] = None,
 ) -> List[str]:
-    INPUT_DIR = EVALS_DIR + "/inputs"
-    evals = _resolve_eval_filenames(input_files)
+    INPUT_DIR = _get_input_dir(eval_set)
+    evals = _resolve_eval_filenames(input_files, INPUT_DIR)
 
     if not stack:
         raise ValueError("No stack was provided")
@@ -182,9 +210,17 @@ async def run_image_evals(
         for n_idx in range(n):
             output_filename = _output_html_filename(original_filename, n_idx)
             output_path = os.path.join(output_subfolder, output_filename)
-            if diff_mode and os.path.exists(output_path):
-                skipped_existing_tasks += 1
-                continue
+            if diff_mode:
+                # Set runs skip by session history (authoritative — shared
+                # day-named output folders collide across sets); the legacy
+                # path keeps the original file-existence check.
+                if eval_set is not None:
+                    if original_filename in (skip_input_files or set()):
+                        skipped_existing_tasks += 1
+                        continue
+                elif os.path.exists(output_path):
+                    skipped_existing_tasks += 1
+                    continue
 
             if data_url is None:
                 data_url = await image_to_data_url(filepath)
@@ -197,6 +233,8 @@ async def run_image_evals(
                 model=current_model_for_task,
                 original_input_filename=original_filename,
                 attempt_idx=n_idx,
+                eval_set=eval_set,
+                eval_session_id=eval_session_id,
             )
             task_coroutines.append(coro)
 
